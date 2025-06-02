@@ -66,9 +66,9 @@ class ATM:
         except ValueError:
             print("Invalid input. Please enter a numeric value.\n")
 
-# -------------------- Main Execution --------------------
+
 if __name__ == "__main__":
-    # Create an ATM object with a sample PIN and optional starting balance
+    
     atm = ATM(user_pin="1234", initial_balance=500.00)
 
     if atm.authenticate():
