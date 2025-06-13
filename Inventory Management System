@@ -1,0 +1,120 @@
+import sqlite3
+import tkinter as tk
+from tkinter import messagebox, ttk, simpledialog
+
+conn = sqlite3.connect("inventory.db")
+cursor = conn.cursor()
+cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    password TEXT NOT NULL)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS inventory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    price REAL NOT NULL)''')
+conn.commit()
+
+def authenticate():
+    login = tk.Tk()
+    login.title("Login")
+
+    tk.Label(login, text="Username").grid(row=0, column=0)
+    tk.Label(login, text="Password").grid(row=1, column=0)
+
+    username = tk.Entry(login)
+    password = tk.Entry(login, show="*")
+    username.grid(row=0, column=1)
+    password.grid(row=1, column=1)
+
+    def check():
+        cursor.execute("SELECT * FROM users WHERE username=? AND password=?", 
+                       (username.get(), password.get()))
+        if cursor.fetchone():
+            login.destroy()
+            inventory_window()
+        else:
+            messagebox.showerror("Error", "Invalid credentials")
+
+    tk.Button(login, text="Login", command=check).grid(row=2, column=0, columnspan=2)
+    login.mainloop()
+
+def inventory_window():
+    root = tk.Tk()
+    root.title("Inventory Manager")
+
+    # Treeview setup
+    tree = ttk.Treeview(root, columns=("ID", "Name", "Qty", "Price"), show="headings")
+    for col in tree["columns"]:
+        tree.heading(col, text=col)
+    tree.grid(row=0, column=0, columnspan=4)
+
+    def refresh():
+        for row in tree.get_children():
+            tree.delete(row)
+        for row in cursor.execute("SELECT * FROM inventory"):
+            tree.insert("", "end", values=row)
+
+    def add_product():
+        name = simpledialog.askstring("Product", "Enter product name:")
+        qty = simpledialog.askinteger("Quantity", "Enter quantity:")
+        price = simpledialog.askfloat("Price", "Enter price:")
+        if name and qty >= 0 and price >= 0:
+            cursor.execute("INSERT INTO inventory (name, quantity, price) VALUES (?, ?, ?)",
+                           (name, qty, price))
+            conn.commit()
+            refresh()
+
+    def edit_product():
+        selected = tree.focus()
+        if not selected:
+            messagebox.showerror("Error", "Select a product to edit.")
+            return
+        values = tree.item(selected, 'values')
+        new_qty = simpledialog.askinteger("Quantity", "New Quantity:", initialvalue=int(values[2]))
+        new_price = simpledialog.askfloat("Price", "New Price:", initialvalue=float(values[3]))
+        if new_qty >= 0 and new_price >= 0:
+            cursor.execute("UPDATE inventory SET quantity=?, price=? WHERE id=?",
+                           (new_qty, new_price, values[0]))
+            conn.commit()
+            refresh()
+
+    def delete_product():
+        selected = tree.focus()
+        if not selected:
+            messagebox.showerror("Error", "Select a product to delete.")
+            return
+        item_id = tree.item(selected)['values'][0]
+        cursor.execute("DELETE FROM inventory WHERE id=?", (item_id,))
+        conn.commit()
+        refresh()
+
+    def low_stock():
+        threshold = simpledialog.askinteger("Threshold", "Enter low stock threshold:")
+        if threshold is not None:
+            rows = cursor.execute("SELECT * FROM inventory WHERE quantity < ?", (threshold,)).fetchall()
+            result = "\n".join([f"{r[1]} (Qty: {r[2]})" for r in rows]) or "No low stock items."
+            messagebox.showinfo("Low Stock Report", result)
+
+    def sales_summary():
+        rows = cursor.execute("SELECT SUM(quantity * price) FROM inventory").fetchone()
+        total_value = rows[0] if rows[0] else 0
+        messagebox.showinfo("Sales Summary", f"Total Inventory Value: ₹{total_value:.2f}")
+
+    tk.Button(root, text="Add", command=add_product).grid(row=1, column=0)
+    tk.Button(root, text="Edit", command=edit_product).grid(row=1, column=1)
+    tk.Button(root, text="Delete", command=delete_product).grid(row=1, column=2)
+    tk.Button(root, text="Low Stock", command=low_stock).grid(row=1, column=3)
+    tk.Button(root, text="Sales Summary", command=sales_summary).grid(row=2, column=1, columnspan=2)
+
+    refresh()
+    root.mainloop()
+
+def create_admin_user():
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO users VALUES (?, ?)", ("admin", "admin"))
+        conn.commit()
+
+create_admin_user()
+authenticate()
